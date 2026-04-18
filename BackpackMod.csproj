@@ -40,10 +40,6 @@
       <HintPath>$(LibPath)/UnityEngine.InputLegacyModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <Reference Include="Il2CppMonoGame.Framework">
-      <HintPath>$(LibPath)/Il2CppMonoGame.Framework.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
     <Reference Include="Assembly-CSharp">
       <HintPath>$(LibPath)/Assembly-CSharp.dll</HintPath>
       <Private>false</Private>
