@@ -3,12 +3,12 @@ name: Build & Release BackpackMod
 on:
   push:
     branches: [main]
-    tags: ["v*"]          # push a tag like v1.0.0 to create a release
+    tags: ["v*"]
   pull_request:
     branches: [main]
 
 permissions:
-  contents: write         # needed for creating releases
+  contents: write
 
 jobs:
   build:
@@ -17,14 +17,32 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          lfs: true          # <-- download LFS files (Assembly-CSharp.dll, etc.)
 
       - name: Setup .NET 6
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "6.0.x"
 
+      - name: Verify lib DLLs are real (not LFS pointers)
+        run: |
+          echo "=== lib/ contents ==="
+          ls -lh lib/
+          # LFS pointer files are ~130 bytes; real DLLs are much larger
+          for f in lib/*.dll; do
+            size=$(stat --format=%s "$f")
+            if [ "$size" -lt 1000 ]; then
+              echo "ERROR: $f looks like an LFS pointer ($size bytes)"
+              exit 1
+            fi
+          done
+          echo "All DLLs look good."
+
       - name: Restore & Build
-        run: dotnet build BackpackMod.csproj -c Release --no-restore || dotnet build BackpackMod.csproj -c Release
+        run: |
+          dotnet restore BackpackMod.csproj
+          dotnet build BackpackMod.csproj -c Release --no-restore
 
       - name: Verify output
         run: |
@@ -32,7 +50,6 @@ jobs:
           ls -lh bin/Release/net6.0/
           test -f bin/Release/net6.0/BackpackMod.dll
 
-      # ---- Package into a zip ----
       - name: Package mod
         run: |
           mkdir -p release-staging
@@ -41,7 +58,6 @@ jobs:
           cd release-staging
           zip -r ../BackpackMod.zip .
 
-      # ---- Upload as artifact (available on every build) ----
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -49,7 +65,6 @@ jobs:
           path: BackpackMod.zip
           retention-days: 30
 
-      # ---- Create a GitHub Release (only on version tags) ----
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
