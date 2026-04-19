@@ -80,7 +80,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "dotnet build failed (exit $LASTEXITCODE)." }
 
     # ── Copy to Mods folder ──────────────────────────────────────────────────
-    $builtDll   = Join-Path $repoRoot "bin\Release\net6.0\BackpackMod.dll"
+    $builtDll  = Join-Path $repoRoot "bin\Release\net6.0\BackpackMod.dll"
     $modsFolder = Join-Path $SR2Path "Mods"
 
     if (-not (Test-Path $builtDll)) {
