@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Il2Cpp;
 using Il2CppMonomiPark.SlimeRancher.Player;
-using Il2CppMonomiPark.SlimeRancher.Player.PlayerItems;
 using MelonLoader;
 using UnityEngine;
 
@@ -25,6 +25,10 @@ namespace BackpackMod
         private static Vector2 _scrollPos;
         private static string _statusMessage = "";
         private static float _statusTimer;
+
+        // Maps IdentifiableType.GetInstanceID() → IdentifiableType so items deposited
+        // from the vac can be identified by their stored int key when withdrawn later.
+        private static readonly Dictionary<int, IdentifiableType> _typeRegistry = new();
 
         // ---- Initialization ----
         public static void Init()
@@ -159,19 +163,17 @@ namespace BackpackMod
         // ============================================================
 
         /// <summary>
-        /// Gets the player's current Ammo (vac-pack inventory) component.
+        /// Gets the player's current PlayerState.
         /// Returns null if the player object isn't available yet.
         /// </summary>
-        private static Ammo GetPlayerAmmo()
+        private static PlayerState GetPlayerState()
         {
             try
             {
-                // SRSingleton<SceneContext>.Instance.PlayerState.Ammo
                 var sceneCtx = SRSingleton<SceneContext>.Instance;
                 if (sceneCtx == null) return null;
                 PlayerState playerState = sceneCtx.PlayerState;
-                if (playerState == null) return null;
-                return playerState.Ammo;
+                return playerState;
             }
             catch
             {
@@ -180,42 +182,60 @@ namespace BackpackMod
         }
 
         /// <summary>
+        /// Finds an unlocked vac slot that already holds <paramref name="identType"/>,
+        /// or the first empty unlocked slot if none matches. Returns null if the vac is full.
+        /// </summary>
+        private static AmmoSlot FindAvailableVacSlot(IEnumerable<AmmoSlot> slots, IdentifiableType identType)
+        {
+            AmmoSlot emptySlot = null;
+            foreach (var s in slots)
+            {
+                if (!s.IsUnlocked) continue;
+                if (s.Id == identType) return s;
+                if (s.Id == null && emptySlot == null) emptySlot = s;
+            }
+            return emptySlot;
+        }
+
+        /// <summary>
         /// Deposit every item from the vac-pack into the backpack.
         /// </summary>
         public static void DepositAll()
         {
-            var ammo = GetPlayerAmmo();
-            if (ammo == null)
-            {
-                ShowStatus("Cannot access inventory right now.");
-                return;
-            }
+            var player = GetPlayerState();
+            if (player == null) { ShowStatus("Cannot access inventory right now."); return; }
+            var ammo = player.Ammo;
 
             int deposited = 0;
 
             // Iterate over every vac slot
-            for (int i = 0; i < ammo.ammoModel.slots.Count; i++)
+            for (int i = 0; i < ammo.Slots.Count; i++)
             {
-                var slotData = ammo.ammoModel.slots[i];
-                if (slotData == null || slotData.count <= 0) continue;
+                var slotData = ammo.Slots[i];
+                if (slotData == null || slotData.Id == null || slotData.Count <= 0) continue;
 
-                var id = slotData.id;
-                string name = id.ToString();
-                int count = slotData.count;
+                var identType = slotData.Id;
+                int itemKey = identType.GetInstanceID();
+                _typeRegistry[itemKey] = identType;
+
+                string name = identType.name;
+                int count = slotData.Count;
 
                 int remaining = count;
                 // Try to fit into existing or empty backpack slots
                 foreach (var bpSlot in Slots)
                 {
                     if (remaining <= 0) break;
-                    remaining = bpSlot.TryAdd((int)id, name, remaining);
+                    remaining = bpSlot.TryAdd(itemKey, name, remaining);
                 }
 
                 int stored = count - remaining;
                 if (stored > 0)
                 {
-                    // Remove the stored amount from the vac
-                    ammo.DecrementSlot(i, stored);
+                    // Remove the stored amount from the vac slot directly
+                    slotData.Count -= stored;
+                    if (slotData.Count <= 0)
+                        slotData.Id = null;
                     deposited += stored;
                 }
             }
@@ -228,29 +248,28 @@ namespace BackpackMod
         /// </summary>
         public static void WithdrawAll()
         {
-            var ammo = GetPlayerAmmo();
-            if (ammo == null)
-            {
-                ShowStatus("Cannot access inventory right now.");
-                return;
-            }
+            var player = GetPlayerState();
+            if (player == null) { ShowStatus("Cannot access inventory right now."); return; }
+            var ammo = player.Ammo;
 
             int withdrawn = 0;
 
-            foreach (var slot in Slots)
+            foreach (var bpSlot in Slots)
             {
-                if (slot.IsEmpty) continue;
+                if (bpSlot.IsEmpty) continue;
+                if (!_typeRegistry.TryGetValue(bpSlot.ItemId, out var identType)) continue;
 
-                var id = (Identifiable.Id)slot.ItemId;
+                var vacSlot = FindAvailableVacSlot(ammo.Slots, identType);
+                if (vacSlot == null) continue;
 
-                // MaybeAddToSlot returns true if it could fit
-                bool added = ammo.MaybeAddToSlot(id, null);
-                if (added)
-                {
-                    // One at a time since the API adds one per call
-                    slot.Withdraw(1);
-                    withdrawn++;
-                }
+                int canFit = vacSlot.MaxCount - vacSlot.Count;
+                if (canFit <= 0) continue;
+
+                int toMove = Math.Min(bpSlot.Count, canFit);
+                if (vacSlot.Id == null) vacSlot.Id = identType;
+                vacSlot.Count += toMove;
+                bpSlot.Withdraw(toMove);
+                withdrawn += toMove;
             }
 
             ShowStatus(withdrawn > 0 ? $"Withdrew {withdrawn} item(s)." : "Vac is full or backpack empty.");
@@ -261,24 +280,29 @@ namespace BackpackMod
         /// </summary>
         public static void WithdrawFromSlot(BackpackSlot slot, int amount)
         {
-            var ammo = GetPlayerAmmo();
-            if (ammo == null)
+            var player = GetPlayerState();
+            if (player == null) { ShowStatus("Cannot access inventory right now."); return; }
+            var ammo = player.Ammo;
+
+            if (!_typeRegistry.TryGetValue(slot.ItemId, out var identType))
             {
-                ShowStatus("Cannot access inventory right now.");
+                ShowStatus("Cannot identify item type.");
                 return;
             }
 
-            int withdrawn = 0;
-            for (int i = 0; i < amount && !slot.IsEmpty; i++)
-            {
-                var id = (Identifiable.Id)slot.ItemId;
-                bool added = ammo.MaybeAddToSlot(id, null);
-                if (!added) break;
-                slot.Withdraw(1);
-                withdrawn++;
-            }
+            var vacSlot = FindAvailableVacSlot(ammo.Slots, identType);
 
-            ShowStatus(withdrawn > 0 ? $"Took {withdrawn}." : "Vac is full!");
+            if (vacSlot == null) { ShowStatus("Vac is full!"); return; }
+
+            int canFit = vacSlot.MaxCount - vacSlot.Count;
+            int toMove = Math.Min(Math.Min(amount, slot.Count), canFit);
+            if (toMove <= 0) { ShowStatus("Vac is full!"); return; }
+
+            if (vacSlot.Id == null) vacSlot.Id = identType;
+            vacSlot.Count += toMove;
+            slot.Withdraw(toMove);
+
+            ShowStatus($"Took {toMove}.");
         }
 
         private static void ShowStatus(string msg)
