@@ -69,7 +69,7 @@ dotnet build BackpackMod.csproj -c Release /p:SR2Path="D:\Games\Slime Rancher 2"
 | Error | Fix |
 |---|---|
 | `MISSING [MelonLoader]` | Install MelonLoader for SR2 and launch the game once |
-| `type not found: Ammo` | The `Il2CppMonomiPark.SlimeRancher.Player.PlayerItems.dll` wrapper is missing from `Il2CppAssemblies\`. Check the actual filename in that folder and update `BackpackMod.csproj` accordingly |
+| `type not found: Ammo` (or similar Il2CppMonomiPark type) | `BackpackUI.cs` uses `Ammo` from `Il2CppMonomiPark.SlimeRancher.Player.PlayerItems`. The DLL containing this type is missing from `Il2CppAssemblies\`. Check the actual filenames there (look for `*MonomiPark*Player*`) and update the `_PlayerHint` / `_PlayerItemsHint` properties in `BackpackMod.csproj` if the name differs |
 | DLL not in `Il2CppAssemblies\` | The assembly may be split differently in your game version; look for `*MonomiPark*Player*` files |
 
 ---
