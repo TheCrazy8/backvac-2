@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Il2Cpp;
 using Il2CppMonomiPark.SlimeRancher.Player;
 using Il2CppMonomiPark.SlimeRancher.Player.PlayerItems;
 using MelonLoader;
@@ -25,6 +26,10 @@ namespace BackpackMod
         private static Vector2 _scrollPos;
         private static string _statusMessage = "";
         private static float _statusTimer;
+
+        // Maps BackpackSlot.ItemId (IdentifiableType.GetInstanceID()) → IdentifiableType,
+        // so we can find the right vac slot when withdrawing items.
+        private static readonly Dictionary<int, IdentifiableType> _itemIdMap = new();
 
         // ---- Initialization ----
         public static void Init()
@@ -155,23 +160,20 @@ namespace BackpackMod
 
         // ============================================================
         //  Inventory bridge helpers
-        //  These use the SR2 Ammo (vac-pack inventory) API.
+        //  These use the SR2 PlayerState / Ammo API.
         // ============================================================
 
         /// <summary>
-        /// Gets the player's current Ammo (vac-pack inventory) component.
+        /// Gets the player's current PlayerState.
         /// Returns null if the player object isn't available yet.
         /// </summary>
-        private static Ammo GetPlayerAmmo()
+        private static PlayerState GetPlayerState()
         {
             try
             {
-                // SRSingleton<SceneContext>.Instance.PlayerState.Ammo
                 var sceneCtx = SRSingleton<SceneContext>.Instance;
                 if (sceneCtx == null) return null;
-                PlayerState playerState = sceneCtx.PlayerState;
-                if (playerState == null) return null;
-                return playerState.Ammo;
+                return sceneCtx.PlayerState;
             }
             catch
             {
@@ -184,8 +186,8 @@ namespace BackpackMod
         /// </summary>
         public static void DepositAll()
         {
-            var ammo = GetPlayerAmmo();
-            if (ammo == null)
+            var playerState = GetPlayerState();
+            if (playerState == null)
             {
                 ShowStatus("Cannot access inventory right now.");
                 return;
@@ -194,28 +196,34 @@ namespace BackpackMod
             int deposited = 0;
 
             // Iterate over every vac slot
-            for (int i = 0; i < ammo.ammoModel.slots.Count; i++)
+            var ammoSlots = playerState.Ammo.Slots;
+            for (int i = 0; i < ammoSlots.Count; i++)
             {
-                var slotData = ammo.ammoModel.slots[i];
-                if (slotData == null || slotData.count <= 0) continue;
+                var slotData = ammoSlots[i];
+                if (slotData == null || slotData.Id == null || slotData.Count <= 0) continue;
 
-                var id = slotData.id;
-                string name = id.ToString();
-                int count = slotData.count;
+                var identType = slotData.Id;
+                int itemId = identType.GetInstanceID();
+                _itemIdMap[itemId] = identType;
+
+                string name = identType.name;
+                int count = slotData.Count;
 
                 int remaining = count;
                 // Try to fit into existing or empty backpack slots
                 foreach (var bpSlot in Slots)
                 {
                     if (remaining <= 0) break;
-                    remaining = bpSlot.TryAdd((int)id, name, remaining);
+                    remaining = bpSlot.TryAdd(itemId, name, remaining);
                 }
 
                 int stored = count - remaining;
                 if (stored > 0)
                 {
                     // Remove the stored amount from the vac
-                    ammo.DecrementSlot(i, stored);
+                    slotData.Count -= stored;
+                    if (slotData.Count <= 0)
+                        slotData.Id = null;
                     deposited += stored;
                 }
             }
@@ -228,8 +236,8 @@ namespace BackpackMod
         /// </summary>
         public static void WithdrawAll()
         {
-            var ammo = GetPlayerAmmo();
-            if (ammo == null)
+            var playerState = GetPlayerState();
+            if (playerState == null)
             {
                 ShowStatus("Cannot access inventory right now.");
                 return;
@@ -241,16 +249,16 @@ namespace BackpackMod
             {
                 if (slot.IsEmpty) continue;
 
-                var id = (Identifiable.Id)slot.ItemId;
+                if (!_itemIdMap.TryGetValue(slot.ItemId, out var identType)) continue;
 
-                // MaybeAddToSlot returns true if it could fit
-                bool added = ammo.MaybeAddToSlot(id, null);
-                if (added)
-                {
-                    // One at a time since the API adds one per call
-                    slot.Withdraw(1);
-                    withdrawn++;
-                }
+                var targetSlot = FindVacSlotForItem(playerState, identType);
+                if (targetSlot == null) break; // vac is full
+
+                if (targetSlot.Id == null)
+                    targetSlot.Id = identType;
+                targetSlot.Count++;
+                slot.Withdraw(1);
+                withdrawn++;
             }
 
             ShowStatus(withdrawn > 0 ? $"Withdrew {withdrawn} item(s)." : "Vac is full or backpack empty.");
@@ -261,24 +269,46 @@ namespace BackpackMod
         /// </summary>
         public static void WithdrawFromSlot(BackpackSlot slot, int amount)
         {
-            var ammo = GetPlayerAmmo();
-            if (ammo == null)
+            var playerState = GetPlayerState();
+            if (playerState == null)
             {
                 ShowStatus("Cannot access inventory right now.");
+                return;
+            }
+
+            if (!_itemIdMap.TryGetValue(slot.ItemId, out var identType))
+            {
+                ShowStatus("Cannot find item type.");
                 return;
             }
 
             int withdrawn = 0;
             for (int i = 0; i < amount && !slot.IsEmpty; i++)
             {
-                var id = (Identifiable.Id)slot.ItemId;
-                bool added = ammo.MaybeAddToSlot(id, null);
-                if (!added) break;
+                var targetSlot = FindVacSlotForItem(playerState, identType);
+                if (targetSlot == null) break;
+
+                if (targetSlot.Id == null)
+                    targetSlot.Id = identType;
+                targetSlot.Count++;
                 slot.Withdraw(1);
                 withdrawn++;
             }
 
             ShowStatus(withdrawn > 0 ? $"Took {withdrawn}." : "Vac is full!");
+        }
+
+        /// <summary>
+        /// Finds an ammo slot that can accept the given item:
+        /// first tries an existing slot with the same item that isn't full,
+        /// then falls back to the first empty unlocked slot.
+        /// </summary>
+        private static AmmoSlot FindVacSlotForItem(PlayerState playerState, IdentifiableType identType)
+        {
+            var slots = playerState.Ammo.Slots;
+            var match = slots.FirstOrDefault(s => s.Id == identType && s.Count < s.MaxCount);
+            if (match != null) return match;
+            return slots.FirstOrDefault(s => s.Id == null && s.IsUnlocked);
         }
 
         private static void ShowStatus(string msg)
@@ -288,3 +318,4 @@ namespace BackpackMod
         }
     }
 }
+

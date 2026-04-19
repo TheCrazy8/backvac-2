@@ -9,3 +9,6 @@ obj/
 
 # Test results
 TestResults/
+
+# Game DLLs – populated locally by scripts/build-local.ps1, never committed
+Libs/
