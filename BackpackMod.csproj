@@ -2,46 +2,46 @@
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
     <AssemblyName>BackpackMod</AssemblyName>
-    <Version>1.0.0</Version>
-    <Description>Adds a backpack to Slime Rancher 2. Press B to open. Store and retrieve items from your vac inventory.</Description>
-    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <PlatformTarget>x64</PlatformTarget>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
   </PropertyGroup>
 
-  <!--
-    Resolve references from the lib/ folder (works both locally and in CI).
-    To use your local SR2 install instead, pass:  dotnet build /p:LibPath="C:\path\to\MelonLoader"
-  -->
   <PropertyGroup>
-    <LibPath Condition="'$(LibPath)' == ''">$(MSBuildProjectDirectory)/lib</LibPath>
+    <SR2Path>C:\Program Files (x86)\Steam\steamapps\common\Slime Rancher 2</SR2Path>
+    <MLNet6>$(SR2Path)\MelonLoader\net6</MLNet6>
+    <IL2>$(SR2Path)\MelonLoader\Il2CppAssemblies</IL2>
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- MelonLoader / Il2CppInterop -->
     <Reference Include="MelonLoader">
-      <HintPath>$(LibPath)/MelonLoader.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="Il2Cppmscorlib">
-      <HintPath>$(LibPath)/Il2Cppmscorlib.dll</HintPath>
+      <HintPath>$(MLNet6)\MelonLoader.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Il2CppInterop.Runtime">
-      <HintPath>$(LibPath)/Il2CppInterop.Runtime.dll</HintPath>
+      <HintPath>$(MLNet6)\Il2CppInterop.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!-- Unity + game -->
+    <Reference Include="Il2Cppmscorlib">
+      <HintPath>$(IL2)\Il2Cppmscorlib.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
-      <HintPath>$(LibPath)/UnityEngine.CoreModule.dll</HintPath>
+      <HintPath>$(IL2)\UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.IMGUIModule">
-      <HintPath>$(LibPath)/UnityEngine.IMGUIModule.dll</HintPath>
+      <HintPath>$(IL2)\UnityEngine.IMGUIModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.InputLegacyModule">
-      <HintPath>$(LibPath)/UnityEngine.InputLegacyModule.dll</HintPath>
+      <HintPath>$(IL2)\UnityEngine.InputLegacyModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Assembly-CSharp">
-      <HintPath>$(LibPath)/Assembly-CSharp.dll</HintPath>
+      <HintPath>$(IL2)\Assembly-CSharp.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
