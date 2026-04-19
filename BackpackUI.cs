@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Il2CppMonomiPark.SlimeRancher.Player;
+using Il2CppMonomiPark.SlimeRancher.Player.PlayerItems;
 using MelonLoader;
 using UnityEngine;
 
@@ -160,14 +162,14 @@ namespace BackpackMod
         /// Gets the player's current Ammo (vac-pack inventory) component.
         /// Returns null if the player object isn't available yet.
         /// </summary>
-        private static global::Ammo GetPlayerAmmo()
+        private static Ammo GetPlayerAmmo()
         {
             try
             {
                 // SRSingleton<SceneContext>.Instance.PlayerState.Ammo
                 var sceneCtx = SRSingleton<SceneContext>.Instance;
                 if (sceneCtx == null) return null;
-                var playerState = sceneCtx.PlayerState;
+                PlayerState playerState = sceneCtx.PlayerState;
                 if (playerState == null) return null;
                 return playerState.Ammo;
             }
@@ -240,7 +242,6 @@ namespace BackpackMod
                 if (slot.IsEmpty) continue;
 
                 var id = (Identifiable.Id)slot.ItemId;
-                int toGive = slot.Count;
 
                 // MaybeAddToSlot returns true if it could fit
                 bool added = ammo.MaybeAddToSlot(id, null);
