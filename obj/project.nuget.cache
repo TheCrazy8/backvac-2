@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "ZywsJTLO0xI=",
+  "success": true,
+  "projectFilePath": "/home/runner/work/backvac-2/backvac-2/BackpackMod.csproj",
+  "expectedPackageFiles": [
+    "/home/runner/.nuget/packages/microsoft.netcore.app.ref/6.0.36/microsoft.netcore.app.ref.6.0.36.nupkg.sha512",
+    "/home/runner/.nuget/packages/microsoft.aspnetcore.app.ref/6.0.36/microsoft.aspnetcore.app.ref.6.0.36.nupkg.sha512"
+  ],
+  "logs": []
+}
